@@ -1,0 +1,10 @@
+/build/
+/cmake-build-*/
+/.idea/
+/.vscode/
+.DS_Store
+
+# Las salidas se regeneran al ejecutar los programas.
+/resultados/*.png
+!/resultados/.gitkeep
+
