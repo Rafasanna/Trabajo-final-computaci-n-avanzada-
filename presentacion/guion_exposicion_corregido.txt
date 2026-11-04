@@ -1,0 +1,70 @@
+Guion de exposición - Computación Avanzada
+Defensa oral: diseño, implementación y resultados
+
+1. Presentación y objetivo
+
+Nuestro trabajo consiste en generar una imagen estilo cartoon a partir de una imagen RGB y comparar distintas formas de ejecutar exactamente el mismo algoritmo. Hicimos cuatro versiones: secuencial, MPI, OpenMP y una híbrida MPI + OpenMP.
+
+Elegimos C++ para todas las implementaciones. Así, al comparar tiempos, la diferencia principal es el modelo de ejecución y no el lenguaje. Además, C++ permite trabajar directamente con OpenMP y MPI. Para cargar y guardar imágenes usamos SFML, porque nos permite acceder a cada píxel y a sus componentes rojo, verde y azul.
+
+La idea central fue mantener el mismo problema y el mismo algoritmo, cambiando solamente la forma de repartir el trabajo. Esto también hace que la comparación sea más justa: si una versión es más rápida, podemos relacionarlo con la forma de paralelizar y no con que esté escrita de una manera totalmente distinta.
+
+2. Cómo se genera el efecto cartoon
+
+El algoritmo tiene dos caminos principales. Por un lado detectamos los bordes y, por otro, reducimos la cantidad de colores mediante posterización. Al final combinamos ambos resultados.
+
+Para detectar bordes primero aplicamos un filtro de promedio para reducir ruido. Probamos filtros 3x3 y 5x5. En 3x3 se consideran hasta 9 píxeles y en 5x5 hasta 25. Para cada canal RGB calculamos el promedio de los vecinos.
+
+Después convertimos cada píxel a gris con la fórmula Gris = 0,30 R + 0,59 G + 0,11 B. Luego aplicamos Sobel, usando una máscara para el gradiente X y otra para el gradiente Y. Con ambos calculamos la magnitud. Si supera el umbral, inicialmente 128, consideramos que existe un borde.
+
+El otro camino es el posterizado. Reducimos los valores posibles de R, G y B y probamos 3 y 9 niveles. Finalmente combinamos la imagen posterizada con la imagen de bordes.
+
+En los bordes externos de la imagen trabajamos únicamente con vecinos válidos para no intentar acceder a posiciones que no existen.
+
+3. Secuencial y OpenMP
+
+La versión secuencial tiene un solo flujo de ejecución. Recorre toda la imagen fila por fila y nos sirve como referencia para medir las versiones paralelas. Calcula primero toda la imagen filtrada, la guarda, y recién después aplica Sobel sobre ella.
+
+En OpenMP usamos memoria compartida. Tenemos un proceso con varios threads y todos pueden acceder a la misma imagen. La directiva pragma omp parallel for reparte las iteraciones del recorrido de filas entre los threads.
+
+Elegimos dividir por filas porque la imagen es una matriz y cada fila representa una parte clara del trabajo. También usamos schedule static porque el trabajo de cada fila es parecido, entonces se puede repartir de forma fija sin agregar coordinación innecesaria. Por ejemplo, con 800 filas y 4 threads, cada thread puede procesar aproximadamente 200 filas.
+
+Esto funciona bien porque muchas operaciones sobre los píxeles son independientes entre sí. Cada thread escribe sobre una zona diferente, lo que evita que varios threads intenten modificar el mismo píxel al mismo tiempo. OpenMP mantiene la misma organización que el secuencial: también calcula y guarda la imagen filtrada una sola vez.
+
+4. MPI y versión híbrida
+
+En MPI usamos memoria distribuida. Trabajamos con varios procesos y cada proceso tiene su propia memoria. El proceso 0 carga la imagen y usa MPI_Bcast para distribuir el tamaño y los píxeles a los demás.
+
+Después dividimos la imagen por filas. Si la cantidad de filas no se divide exactamente entre la cantidad de procesos, calculamos filas base y filas sobrantes. Así algunos procesos pueden recibir una fila más. Cada proceso trabaja solamente sobre las filas que le corresponden.
+
+Hay una diferencia de implementación importante: MPI no guarda la imagen filtrada. Cada proceso hace todo en una sola pasada y calcula el píxel filtrado en el momento en que Sobel lo necesita. Como Sobel mira 9 vecinos, el filtro se calcula hasta 9 veces para cada píxel.
+
+Cuando todos terminan usamos MPI_Gatherv para reunir los resultados en el proceso 0. Elegimos Gatherv porque permite juntar bloques de distinto tamaño.
+
+Para medir el tiempo usamos MPI_Wtime con barreras antes de empezar y antes de terminar. La distribución inicial con MPI_Bcast queda fuera de la medición; la reunión final con MPI_Gatherv queda adentro.
+
+La versión híbrida combina ambos modelos. Primero MPI reparte grupos de filas entre procesos y después OpenMP reparte esas filas entre threads dentro de cada proceso. Por ejemplo, con 2 procesos y 4 threads por proceso tenemos 8 unidades de ejecución. Usa el mismo cálculo que MPI, así que también repite el filtro.
+
+5. Rendimiento: Speedup y Eficiencia
+
+Para evaluar el rendimiento probamos imágenes de 800x800, 2000x2000 y 5000x5000 píxeles. También probamos filtros 3x3 y 5x5, posterizado de 3 y 9 niveles y distintas cantidades de threads.
+
+Usamos Speedup y Eficiencia. El Speedup se calcula como tiempo secuencial dividido tiempo paralelo. Si es mayor que 1, la versión paralela fue más rápida. La eficiencia se calcula como Speedup dividido por la cantidad de unidades de ejecución. Nos muestra qué tan bien estamos aprovechando los recursos.
+
+Por ejemplo, con 5000x5000, el secuencial tardó aproximadamente 2,59 segundos y OpenMP con 4 threads 0,96 segundos. El Speedup fue 2,69 y la eficiencia fue cercana al 67 por ciento.
+
+6. Resultados y conclusión
+
+OpenMP fue la implementación con mejor rendimiento en nuestra máquina. Su Speedup fue aproximadamente 2,60 para 800x800, 2,71 para 2000x2000 y 2,69 para 5000x5000. El comportamiento se mantuvo bastante estable al aumentar el tamaño de la imagen.
+
+MPI tuvo Speedup menor que 1. Eso no significa que MPI esté mal. La razón principal está en cómo quedó implementado: el secuencial y OpenMP calculan la imagen filtrada una sola vez, mientras que MPI calcula el píxel filtrado cada vez que Sobel lo necesita, hasta 9 veces por píxel. Aunque repartamos las filas entre 4 procesos, cada uno hace mucho más trabajo que el necesario. A eso se suman las barreras de sincronización y la reunión de resultados con MPI_Gatherv, que sí están dentro de la medición. Además, todo corre en una sola computadora, así que MPI no aprovecha su ventaja principal, que es repartir el trabajo entre varias máquinas.
+
+La versión híbrida tiene el mismo trabajo repetido en el filtro. Con 8 unidades de ejecución ese trabajo extra se reparte más, por eso quedó cerca del secuencial, pero no lo superó de forma consistente. Esto muestra que tener más unidades de ejecución no garantiza automáticamente menor tiempo: también importa cuánto trabajo hace cada una.
+
+Con OpenMP probamos 1, 2, 4 y 8 threads. El tiempo disminuyó al aumentar los threads, aunque la eficiencia no creció proporcionalmente por los costos de coordinación.
+
+También vimos que el filtro 5x5 aumentó más el tiempo que pasar de 3 a 9 niveles de posterizado, porque analiza hasta 25 vecinos en lugar de 9. En MPI y en la versión híbrida ese costo pesa todavía más, porque el filtro se repite para cada vecino de Sobel.
+
+La conclusión es que paralelizar no es solamente agregar procesos o threads. Hay que elegir un modelo adecuado al problema, revisar cuánto trabajo hace cada versión y medir si realmente mejora. En nuestro caso, OpenMP fue la mejor opción porque los threads pueden trabajar sobre distintas filas compartiendo la misma imagen, sin copiar datos entre procesos y calculando el filtro una sola vez.
+
+Si nos preguntan cómo mejoraríamos MPI: haríamos que cada proceso calcule y guarde primero su bloque filtrado, incluyendo las filas vecinas que necesita Sobel en los límites del bloque, y recién después aplique Sobel. Así el filtro se calcularía una sola vez por píxel, como en las otras versiones.
