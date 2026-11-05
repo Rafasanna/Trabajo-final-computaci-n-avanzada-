@@ -76,7 +76,9 @@ main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px
 .s-head .lede{grid-column:2;font-size:clamp(17px,1.6vw,21px);max-width:60ch;color:var(--muted)}
 .s-head .lede b{color:var(--fg)}
 @media (max-width:640px){.h1b{font-size:12vw}.badge{width:60px;height:60px;font-size:28px;grid-row:span 1;align-self:end}.s-head h2{grid-column:1 / -1;font-size:10.5vw}.s-head .lede{grid-column:1 / -1}.lane .ln b{font-size:15px}.lane .ln span{display:none}}
-.lane .ln{min-width:0;overflow-wrap:anywhere}
+.lane .ln{min-width:0}
+@media (min-width:521px){.lane .ln b{font-size:18px}}
+@media (max-width:520px){.lane .ln{overflow-wrap:anywhere}}
 
 /* ---------- hero ---------- */
 .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:48px;align-items:center}
@@ -253,6 +255,24 @@ table.rows td:first-child{font-weight:700}
 .lane .t{font-family:var(--mono);font-weight:700;font-size:15px;text-align:right;font-variant-numeric:tabular-nums}
 .lane .t small{display:block;font-size:10.5px;color:var(--muted);font-weight:600}
 .chart svg{width:100%;height:auto;display:block}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend span::before{content:"";width:12px;height:12px;background:var(--k);border:2px solid var(--line)}
+.legend span.one{color:var(--c-mpi);font-weight:700}
+.legend span.one::before{width:16px;height:0;border:0;border-top:2.5px solid var(--c-mpi);background:none}
+.fixbars{display:flex;flex-direction:column;gap:22px;padding-top:14px}
+.fixrow{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:center}
+@media (max-width:620px){.fixrow{grid-template-columns:minmax(0,1fr)}}
+.fixrow .ln b{display:block;font-weight:800;font-stretch:75%;font-size:22px;line-height:1;text-transform:uppercase}
+.fixrow .ln span{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.fixtracks{position:relative;display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:16px}
+.fbar{height:22px;border:2px solid var(--line);transition:width 1s cubic-bezier(.2,.9,.2,1)}
+.flabel{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px}
+.flabel b{color:var(--fg)}
+.fbar.ini{background:repeating-linear-gradient(-45deg,var(--bg2) 0 7px,var(--hatch) 7px 9px);color:var(--fg)}
+.fbar.cor{background:var(--k);color:var(--on)}
+.seqmark{position:absolute;top:14px;bottom:-4px;border-left:2px dashed var(--fg);pointer-events:none}
+.seqmark span{position:absolute;bottom:100%;left:4px;font-family:var(--mono);font-size:10.5px;white-space:nowrap;color:var(--muted)}
 .chart text{font-family:var(--mono);fill:var(--fg)}
 .chart .ax{fill:var(--muted);font-size:11px}
 .chart .gl{stroke:var(--hatch);stroke-width:1}
@@ -482,8 +502,9 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
       <div class="phases">
         <span class="phase"><i>1</i>P0 carga la imagen</span>
         <span class="phase"><i>2</i>MPI_Bcast</span>
-        <span class="phase"><i>3</i>cómputo local</span>
-        <span class="phase"><i>4</i>MPI_Gatherv</span>
+        <span class="phase"><i>3</i>filtrar bloque</span>
+        <span class="phase"><i>4</i>cómputo local</span>
+        <span class="phase"><i>5</i>MPI_Gatherv</span>
       </div>
     </div>
     <div class="info">
@@ -495,14 +516,20 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
       <p class="formula-line" id="mpiMath"></p>
       <div class="tbl-wrap"><table class="rows" id="mpiRows"></table></div>
       <div class="prose">
-        <p>El proceso 0 carga la imagen y la reparte con <b>MPI_Bcast</b>: primero el tamaño y después los píxeles. Cada proceso calcula solo sus filas, en una sola pasada.</p>
+        <p>El proceso 0 carga la imagen y la reparte con <b>MPI_Bcast</b>: primero el tamaño y después los píxeles. Cada proceso trabaja solo con sus filas, en dos pasos: primero <b>filtra su bloque una sola vez</b> y lo guarda; después aplica Sobel, posteriza y combina.</p>
         <p>Al final, <b>MPI_Gatherv</b> junta los bloques en el proceso 0. Usamos Gatherv porque permite reunir bloques de distinto tamaño, cuando las filas no se dividen exacto.</p>
-        <p>Una diferencia clave: MPI <b>no guarda la imagen filtrada</b>. Calcula el píxel filtrado cada vez que Sobel lo necesita, y como Sobel mira 9 vecinos, el filtro se repite hasta 9 veces por píxel.</p>
+        <p>Sobel necesita una fila vecina arriba y otra abajo, así que cada proceso filtra sus filas <b>más esas dos</b> y guarda todo en <b>imagenFiltradaLocal</b>. En la primera versión no se guardaba: el filtro se recalculaba para cada vecino de Sobel.</p>
       </div>
       <div class="facts">
-        <div class="fact"><span>Filtro por píxel · secuencial y OpenMP</span><b>1 vez</b></div>
-        <div class="fact"><span>Filtro por píxel · MPI e híbrido</span><b>hasta 9 veces</b></div>
+        <div class="fact"><span>Filtro por píxel · versión inicial</span><b>hasta 9 veces</b></div>
+        <div class="fact"><span>Filtro por píxel · versión corregida</span><b>1 vez</b></div>
       </div>
+<pre class="code"><span class="cm">// mpi.cpp · CORRECCIÓN</span>
+<span class="cm">// 1) filtrar una sola vez el bloque (+1 fila arriba y abajo)</span>
+<span class="kw">for</span> (int fila = filaInicialFiltrado; fila &lt; filaFinalFiltrado; fila++)
+    <span class="cm">// guarda pixelFiltrado(...) en imagenFiltradaLocal</span>
+<span class="cm">// 2) Sobel lee los valores guardados</span>
+valorBorde = <span class="fn">calcularBorde</span>(imagenFiltradaLocal, filaInicialFiltrado, …);</pre>
       <p class="meta">Medición con MPI_Wtime: el Bcast inicial queda afuera; las barreras y el Gatherv quedan adentro.</p>
     </div>
   </div>
@@ -525,8 +552,9 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
       <div class="phases">
         <span class="phase"><i>1</i>P0 carga la imagen</span>
         <span class="phase"><i>2</i>MPI_Bcast</span>
-        <span class="phase"><i>3</i>threads por proceso</span>
-        <span class="phase"><i>4</i>MPI_Gatherv</span>
+        <span class="phase"><i>3</i>filtrar bloque</span>
+        <span class="phase"><i>4</i>threads por proceso</span>
+        <span class="phase"><i>5</i>MPI_Gatherv</span>
       </div>
     </div>
     <div class="info">
@@ -543,12 +571,14 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
       </div>
       <div class="prose">
         <p>Se ejecuta con <b>mpirun -np P</b> y la cantidad de threads es <b>por cada proceso</b>. Con 2 procesos y 4 threads hay 8 unidades de ejecución.</p>
-        <p>Para la eficiencia contamos procesos × threads como unidades de ejecución. Usa el mismo cálculo que MPI, así que también <b>repite el filtro hasta 9 veces por píxel</b>.</p>
+        <p>Para la eficiencia contamos procesos × threads como unidades de ejecución. Usa el mismo esquema que MPI: cada proceso <b>filtra su bloque una sola vez</b>, y OpenMP reparte entre threads tanto el filtrado como el cómputo.</p>
       </div>
 <pre class="code"><span class="cm">// hibrido.cpp: MPI ya asignó [filaInicial, filaFinal)</span>
 <span class="fn">omp_set_num_threads</span>(cantidadThreads);
 <span class="kw">#pragma omp parallel for schedule(static)</span>
-<span class="kw">for</span> (int fila = filaInicial; fila &lt; filaFinal; fila++) { … }
+<span class="kw">for</span> (int fila = filaInicialFiltrado; fila &lt; filaFinalFiltrado; fila++) { … } <span class="cm">// filtrar bloque</span>
+<span class="kw">#pragma omp parallel for schedule(static)</span>
+<span class="kw">for</span> (int fila = filaInicial; fila &lt; filaFinal; fila++) { … } <span class="cm">// Sobel, posterizado, combinación</span>
 <span class="fn">MPI_Gatherv</span>(resultadoLocal, …, imagenCartoon, …);</pre>
     </div>
   </div>
@@ -569,35 +599,41 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
     <div class="rtile" style="--k:var(--c-mpi)"><canvas width="10" height="10" aria-label="Resultado MPI"></canvas><div class="rt"><b>MPI</b><span>procesos</span></div></div>
     <div class="rtile" style="--k:var(--c-hib)"><canvas width="10" height="10" aria-label="Resultado híbrido"></canvas><div class="rt"><b>Híbrido</b><span>proc × threads</span></div></div>
   </div>
-  <p class="same"><span class="stamp">Misma salida</span><span class="muted">Con los mismos parámetros, comparamos los PNG de nuestras corridas píxel a píxel: secuencial = MPI y OpenMP = híbrido, sin diferencias.</span></p>
+  <p class="same"><span class="stamp">Misma salida</span><span class="muted">Comparamos las imágenes byte a byte: con los mismos parámetros, todas las versiones paralelas, incluida la corrección de MPI, generan exactamente la misma imagen que la secuencial.</span></p>
+
+  <div class="panel" style="--k:var(--c-mpi)">
+    <div><h3>Corrigiendo MPI · 5000 × 5000</h3><p class="sub">Misma configuración, antes y después de filtrar el bloque una sola vez. La línea punteada es el tiempo secuencial.</p></div>
+    <div class="fixbars" id="fixBars"></div>
+  </div>
 
   <div class="cmp">
     <div class="panel">
-      <div><h3>Carrera · 5000 × 5000</h3><p class="sub">Tiempos medidos en nuestra máquina. La animación respeta la proporción real.</p></div>
+      <div><h3>Carrera · 5000 × 5000</h3><p class="sub">Versiones corregidas, medidas en nuestra Mac (Apple M5). La animación respeta la proporción real.</p></div>
       <div id="race" style="display:flex;flex-direction:column;gap:12px"></div>
       <div class="ctrl"><button class="btn solid" id="raceBtn" style="--k:var(--c-seq)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>Largar</button></div>
       <div class="formulas">
-        <div class="fbox"><span>Speedup</span><div class="eq">T secuencial ÷ T paralelo</div><div class="eq muted">2,59 s ÷ 0,96 s</div><div class="big">≈ 2,69</div></div>
-        <div class="fbox"><span>Eficiencia</span><div class="eq">Speedup ÷ unidades</div><div class="eq muted">2,69 ÷ 4 threads</div><div class="big">≈ 67 %</div></div>
+        <div class="fbox"><span>Speedup</span><div class="eq">T secuencial ÷ T paralelo</div><div class="eq muted">2,5865 s ÷ 0,9575 s</div><div class="big">≈ 2,70</div></div>
+        <div class="fbox"><span>Eficiencia</span><div class="eq">Speedup ÷ unidades</div><div class="eq muted">2,70 ÷ 4 threads</div><div class="big">≈ 67,5 %</div></div>
       </div>
     </div>
     <div class="panel chart">
-      <div><h3>Speedup de OpenMP</h3><p class="sub">4 threads · por tamaño de imagen</p></div>
-      <svg id="chart" viewBox="0 0 460 300" role="img" aria-label="Speedup de OpenMP: 2,60 en 800 por 800, 2,71 en 2000 por 2000 y 2,69 en 5000 por 5000"></svg>
-      <p class="sub">Estable al crecer la imagen. No llega al ideal de 4 por los costos de coordinar threads.</p>
+      <div><h3>Speedup por tamaño</h3><p class="sub">OpenMP 4 threads · MPI 4 procesos · híbrido 2 × 4 (corregidos)</p></div>
+      <svg id="chart" viewBox="0 0 520 300" role="img" aria-label="Speedup por tamaño. 800 por 800: OpenMP 2,70, MPI 2,25, híbrido 2,66. 2000 por 2000: OpenMP 2,75, MPI 2,27, híbrido 2,83. 5000 por 5000: OpenMP 2,70, MPI 2,03, híbrido 2,65."></svg>
+      <div class="legend"><span style="--k:var(--c-omp)">OpenMP</span><span style="--k:var(--c-mpi)">MPI</span><span style="--k:var(--c-hib)">Híbrido</span><span class="one">1× = igual al secuencial</span></div>
+      <p class="sub">OpenMP y el híbrido quedan parejos, pero el híbrido usa el doble de unidades de ejecución.</p>
     </div>
   </div>
 
   <div class="finds">
-    <div class="find" style="--k:var(--c-omp)"><span class="n">Hallazgo 1</span><h4>OpenMP gana</h4><p>Speedup de <b>2,60 a 2,71</b> en los tres tamaños. Los threads comparten la imagen y no hay que copiar datos entre procesos.</p></div>
-    <div class="find" style="--k:var(--c-mpi)"><span class="n">Hallazgo 2</span><h4>MPI por debajo de 1</h4><p>La causa principal está en el código: MPI <b>recalcula el filtro hasta 9 veces por píxel</b>, una por cada vecino de Sobel. Repartido en 4 procesos, sigue siendo más trabajo que el secuencial. Se suman las barreras y el Gatherv, y todo corre en <b>una sola computadora</b>.</p></div>
-    <div class="find" style="--k:var(--c-hib)"><span class="n">Hallazgo 3</span><h4>Híbrido ≈ secuencial</h4><p>Tiene el mismo trabajo extra que MPI. Con <b>8 unidades de ejecución</b> ese extra se reparte más y queda cerca del secuencial, sin superarlo de forma consistente.</p></div>
-    <div class="find" style="--k:var(--c-seq)"><span class="n">Hallazgo 4</span><h4>5×5 pesa más</h4><p>El filtro 5×5 analiza hasta <b>25 vecinos</b> en lugar de 9. Subió el tiempo más que pasar de 3 a 9 niveles. En MPI e híbrido pesa todavía más, porque ese filtro se repite.</p></div>
+    <div class="find" style="--k:var(--c-omp)"><span class="n">Hallazgo 1</span><h4>OpenMP, el más eficiente</h4><p>Speedup de <b>2,70 a 2,75</b> con 4 threads y eficiencia cercana al <b>68 %</b>. Los threads comparten la imagen y no hay que copiar datos entre procesos.</p></div>
+    <div class="find" style="--k:var(--c-mpi)"><span class="n">Hallazgo 2</span><h4>El problema de MPI era el código</h4><p>La versión inicial <b>recalculaba el filtro hasta 9 veces por píxel</b> y daba Speedup 0,63. Filtrando el bloque una sola vez pasó a <b>2,03</b> con 4 procesos.</p></div>
+    <div class="find" style="--k:var(--c-hib)"><span class="n">Hallazgo 3</span><h4>Híbrido: rápido, pero caro</h4><p>Tiempo similar a OpenMP (<b>0,98 s</b> contra 0,96 s) con el doble de unidades: eficiencia cercana al <b>33 %</b>. Más allá de 4 unidades, el trabajo cae en núcleos de eficiencia.</p></div>
+    <div class="find" style="--k:var(--c-seq)"><span class="n">Hallazgo 4</span><h4>5×5 pesa más</h4><p>El filtro 5×5 analiza hasta <b>25 vecinos</b> en lugar de 9 y subió el tiempo más que pasar de 3 a 9 niveles. En la versión inicial de MPI el efecto era mucho mayor: de <b>0,57 s a 1,42 s</b>.</p></div>
   </div>
 
   <div class="closing">
-    <p>Paralelizar no es solo agregar threads o procesos: hay que <em>elegir el modelo</em> que le sirve al problema y medir.</p>
-    <small>En nuestro caso, OpenMP: threads sobre distintas filas, compartiendo la misma imagen, sin copiar datos entre procesos y calculando el filtro una sola vez.</small>
+    <p>Paralelizar no es solo agregar threads o procesos: hay que <em>medir</em>, encontrar dónde se va el tiempo y corregirlo.</p>
+    <small>En nuestro caso, el bajo rendimiento de MPI no era la comunicación: era trabajo repetido. Corregido eso, OpenMP sigue siendo la opción más eficiente.</small>
   </div>
 </section>
 </main>
@@ -605,13 +641,22 @@ imagenCartoon     = <span class="fn">combinar</span>(imagenPosterizada, imagenBo
 
 <script>
 /* ============ datos medidos (del informe) ============ */
+// resultados/tiempos.csv del repo · Apple M5 · filtro 3x3, 3 niveles · mediana de 3
 const CARRERA = [
-  { id:'seq', nombre:'Secuencial', config:'1 flujo',            t:2.59, k:'--c-seq' },
-  { id:'omp', nombre:'OpenMP',     config:'4 threads',          t:0.96, s:2.69, k:'--c-omp' },
-  { id:'mpi', nombre:'MPI',        config:'4 procesos',         t:3.65, s:0.71, k:'--c-mpi' },
-  { id:'hib', nombre:'Híbrido',    config:'2 proc × 4 threads', t:2.54, s:1.02, k:'--c-hib' },
+  { id:'seq', nombre:'Secuencial', config:'1 flujo',            t:2.5865, k:'--c-seq' },
+  { id:'omp', nombre:'OpenMP',     config:'4 threads',          t:0.9575, s:2.70, k:'--c-omp' },
+  { id:'mpi', nombre:'MPI',        config:'4 procesos',         t:1.2745, s:2.03, k:'--c-mpi' },
+  { id:'hib', nombre:'Híbrido',    config:'2 proc × 4 threads', t:0.9759, s:2.65, k:'--c-hib' },
 ];
-const SPEEDUP_OMP = [ {tam:'800×800', s:2.60}, {tam:'2000×2000', s:2.71}, {tam:'5000×5000', s:2.69} ];
+const SPEEDUP = [
+  { tam:'800×800',   omp:2.70, mpi:2.25, hib:2.66 },
+  { tam:'2000×2000', omp:2.75, mpi:2.27, hib:2.83 },
+  { tam:'5000×5000', omp:2.70, mpi:2.03, hib:2.65 },
+];
+const CORRECCION = { seq:2.5865, filas:[
+  { nombre:'MPI',     config:'4 procesos', k:'--c-mpi', ini:4.0920, cor:1.2745, sIni:0.63, sCor:2.03 },
+  { nombre:'Híbrido', config:'2 × 4 = 8',  k:'--c-hib', ini:2.7714, cor:0.9759, sIni:0.93, sCor:2.65 },
+]};
 
 /* ============ utilidades ============ */
 const $ = (s, r=document) => r.querySelector(s), $$ = (s, r=document) => [...r.querySelectorAll(s)];
@@ -689,7 +734,7 @@ function tagPill(ctx,txt,x,y,color){ const fs=Math.max(11,Math.round(S.w/34)); c
 function drawReveal(ctx, base, top, bands, o={}){
   const w=S.w,h=S.h, lw=Math.max(2,w/220); ctx.clearRect(0,0,w,h);
   if(base) ctx.drawImage(base,0,0); else hatch(ctx);
-  if(o.dim){ ctx.fillStyle=css('--dim'); ctx.fillRect(0,0,w,h); if(o.undim && base) for(const b of bands) ctx.drawImage(base,0,b.y0,w,b.y1-b.y0,0,b.y0,w,b.y1-b.y0); }
+  if(o.dim){ ctx.fillStyle=css('--dim'); ctx.fillRect(0,0,w,h); if(o.undim && base){ const ul=o.undimLayer||base; for(const b of (o.undimBands||bands)) ctx.drawImage(ul,0,b.y0,w,b.y1-b.y0,0,b.y0,w,b.y1-b.y0); } }
   for(const b of bands){ const hh=Math.round((b.y1-b.y0)*b.p); if(hh>0) ctx.drawImage(top,0,b.y0,w,hh,0,b.y0,w,hh);
     if(b.p>0&&b.p<1){ ctx.save(); ctx.shadowColor=b.color; ctx.shadowBlur=w/22; ctx.fillStyle=b.color; ctx.fillRect(0,b.y0+hh-lw,w,lw*2.4); ctx.restore(); } }
   if(o.frames) for(const b of bands){ ctx.strokeStyle=b.color; ctx.lineWidth=lw; ctx.setLineDash([lw*3,lw*2]); ctx.strokeRect(lw/2,b.y0+lw/2,w-lw,b.y1-b.y0-lw); ctx.setLineDash([]); }
@@ -809,7 +854,10 @@ function Cluster(root, cfg){
     cvs=$$('canvas',procsEl); cfg.onBuild && cfg.onBuild(R,P,T); }
   function bandsFor(p,prog){ const b=reparto(S.h,P).out[p]; if(!cfg.threads) return [{y0:b.y0,y1:b.y1,p:prog,color:UNIT[p%8],tag:'P'+p}];
     return reparto(b.cnt,T).out.map((x,t)=>({y0:b.y0+x.y0,y1:b.y0+x.y1,p:prog,color:UNIT[t%8],tag:'T'+t})); }
-  function drawProc(p,prog){ drawReveal(size(cvs[p]),S.L.original,S.L.cartoon,bandsFor(p,prog),{dim:true,undim:true,frames:true,tags:!!cfg.threads && S.w>0}); }
+  // bloque filtrado: sus filas más una fila vecina arriba y otra abajo (si existen)
+  function haloFor(p,prog){ const bs=bandsFor(p,prog).map(b=>({...b})); bs[0].y0=Math.max(0,bs[0].y0-1); bs[bs.length-1].y1=Math.min(S.h,bs[bs.length-1].y1+1); return bs; }
+  function drawFiltro(p,prog){ drawReveal(size(cvs[p]),S.L.original,S.L.filtrada,haloFor(p,prog),{dim:true,undim:true,frames:true,tags:!!cfg.threads}); }
+  function drawProc(p,prog){ drawReveal(size(cvs[p]),S.L.original,S.L.cartoon,bandsFor(p,prog),{dim:true,undim:true,undimLayer:S.L.filtrada,undimBands:haloFor(p,1),frames:true,tags:!!cfg.threads}); }
   function setPhase(i){ phases.forEach((ph,j)=>ph.className='phase'+(j<i?' done':j===i?' on':'')); }
   function rest(){ build(); for(let p=0;p<P;p++) drawProc(p,1); size(res).drawImage(S.L.cartoon,0,0); phases.forEach(ph=>ph.className='phase done'); }
   function ghostCanvas(src,y0,y1){ const c=document.createElement('canvas'); c.width=S.w; c.height=y1-y0; c.getContext('2d').drawImage(src,0,y0,S.w,y1-y0,0,0,S.w,y1-y0); return c; }
@@ -832,10 +880,14 @@ function Cluster(root, cfg){
     const imgOk=await Promise.all(cvs.slice(1).map((c,j)=>{ const g=ghostCanvas(S.L.original,0,S.h); g.className='ghost'; return wait(j*90,t).then(()=>fly(g,rectOf(src),rectOf(c),900,t)).then(ok=>{ if(ok){ size(c).drawImage(S.L.original,0,0); c.closest('.proc').classList.remove('pulse'); void c.offsetWidth; c.closest('.proc').classList.add('pulse'); } return ok; }); }));
     if(imgOk.includes(false)) return; if(!await wait(300,t)) return;
     // 3 · cómputo local (una sola pasada)
-    setPhase(2); if(!await tween(cfg.threads?1100:1700, e=>{ for(let p=0;p<P;p++) drawProc(p,e); }, t)) return;
+    // 3 · filtrar el bloque una sola vez
+    setPhase(2); if(!await tween(cfg.threads?700:1100, e=>{ for(let p=0;p<P;p++) drawFiltro(p,e); }, t)) return;
     if(!await wait(250,t)) return;
-    // 4 · Gatherv
-    setPhase(3); const rctx=size(res); hatch(rctx); const llegaron=[];
+    // 4 · Sobel, posterizado y combinación sobre los valores guardados
+    setPhase(3); if(!await tween(cfg.threads?900:1400, e=>{ for(let p=0;p<P;p++) drawProc(p,e); }, t)) return;
+    if(!await wait(250,t)) return;
+    // 5 · Gatherv
+    setPhase(4); const rctx=size(res); hatch(rctx); const llegaron=[];
     const gOk=await Promise.all(R.out.map((b,p)=>{ const g=ghostCanvas(S.L.cartoon,b.y0,b.y1); g.className='ghost'; g.style.borderColor=UNIT[p%8];
       return wait(p*140,t).then(()=>fly(g,rectOf(cvs[p],b.y0,b.y1),rectOf(res,b.y0,b.y1),850,t)).then(ok=>{ if(ok){ llegaron.push(b); hatch(rctx); llegaron.forEach(x=>rctx.drawImage(S.L.cartoon,0,x.y0,S.w,x.y1-x.y0,0,x.y0,S.w,x.y1-x.y0)); } return ok; }); }));
     if(gOk.includes(false)) return; rctx.drawImage(S.L.cartoon,0,0); phases.forEach(ph=>ph.className='phase done'); }
@@ -866,18 +918,27 @@ const cmp = (()=>{ let tok={dead:true};
     CARRERA.forEach(r=>{ if(r.t!=null) setLane(r,$(`[data-id="${r.id}"]`,race),0,false); }); if(!await wait(300,t)) return;
     await tween(MAX*1000*ESC, e=>{ const ts=e*MAX; CARRERA.forEach(r=>{ if(r.t!=null) setLane(r,$(`[data-id="${r.id}"]`,race),ts,ts>=r.t); }); }, t); if(!t.dead) rest(); }
   $('#raceBtn').onclick=run;
-  // gráfico
-  (function chart(){ const svg=$('#chart'), W=460, H=300, L=46, R=16, T=18, B=40, yMax=4, iw=W-L-R, ih=H-T-B, y=v=>T+ih-(v/yMax)*ih; let s='';
+  // gráfico agrupado de speedup
+  (function chart(){ const svg=$('#chart'), W=520, H=300, L=46, R=16, T=18, B=40, yMax=4, iw=W-L-R, ih=H-T-B, y=v=>T+ih-(v/yMax)*ih; let s='';
     for(let v=0;v<=4;v++) s+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L-10}" y="${y(v)+4}" text-anchor="end">${v}×</text>`;
-    const bw=iw/SPEEDUP_OMP.length;
-    SPEEDUP_OMP.forEach((d,i)=>{ const x=L+bw*i+bw*.2, w=bw*.6; s+=`<rect class="bar" x="${x}" y="${y(d.s)}" width="${w}" height="${y(0)-y(d.s)}" fill="var(--c-omp)" stroke="var(--line)" stroke-width="2" style="transform-origin:${x}px ${y(0)}px"/>
-      <text x="${x+w/2}" y="${y(d.s)-8}" text-anchor="middle" font-size="15" font-weight="700">${fmt(d.s)}</text><text class="ax" x="${x+w/2}" y="${H-B+20}" text-anchor="middle">${d.tam}</text>`; });
-    s+=`<line x1="${L}" x2="${W-R}" y1="${y(4)}" y2="${y(4)}" stroke="var(--fg)" stroke-width="2" stroke-dasharray="6 5"/><text x="${W-R}" y="${y(4)+16}" text-anchor="end" font-size="11" fill="var(--muted)">ideal con 4 threads</text>`;
-    s+=`<line x1="${L}" x2="${W-R}" y1="${y(1)}" y2="${y(1)}" stroke="var(--c-mpi)" stroke-width="2.5"/><text x="${W-R}" y="${y(1)-7}" text-anchor="end" font-size="11" fill="var(--c-mpi)" font-weight="700">1× = igual al secuencial</text>`;
+    const gw=iw/SPEEDUP.length, VS=[['omp','--c-omp'],['mpi','--c-mpi'],['hib','--c-hib']], bw=gw*.24;
+    SPEEDUP.forEach((d,i)=>{ const gx=L+gw*i+gw*.14;
+      VS.forEach(([k,c],j)=>{ const x=gx+j*bw; s+=`<rect class="bar" x="${x}" y="${y(d[k])}" width="${bw-3}" height="${y(0)-y(d[k])}" fill="var(${c})" stroke="var(--line)" stroke-width="2" style="transform-origin:${x}px ${y(0)}px"/>
+        <text x="${x+(bw-3)/2}" y="${y(d[k])-6}" text-anchor="middle" font-size="11" font-weight="700">${fmt(d[k])}</text>`; });
+      s+=`<text class="ax" x="${gx+bw*1.5}" y="${H-B+20}" text-anchor="middle">${d.tam}</text>`; });
+    s+=`<line x1="${L}" x2="${W-R}" y1="${y(4)}" y2="${y(4)}" stroke="var(--fg)" stroke-width="2" stroke-dasharray="6 5"/><text x="${W-R}" y="${y(4)+16}" text-anchor="end" font-size="11" fill="var(--muted)">ideal con 4 unidades</text>`;
+    s+=`<line x1="${L}" x2="${W-R}" y1="${y(1)}" y2="${y(1)}" stroke="var(--c-mpi)" stroke-width="2.5"/>`;
     svg.innerHTML=s; })();
+  // antes y después de la corrección
+  const fix=$('#fixBars'), FMAX=Math.max(...CORRECCION.filas.map(f=>f.ini));
+  fix.innerHTML=CORRECCION.filas.map(f=>`<div class="fixrow" style="--k:var(${f.k})"><div class="ln"><b>${f.nombre}</b><span>${f.config}</span></div>
+    <div class="fixtracks"><span class="flabel">Inicial · <b>${fmt(f.ini)} s</b> · speedup ${fmt(f.sIni)}</span><div class="fbar ini" data-w="${f.ini/FMAX*100}"></div><span class="flabel">Corregido · <b>${fmt(f.cor)} s</b> · speedup ${fmt(f.sCor)}</span><div class="fbar cor" data-w="${f.cor/FMAX*100}"></div>
+    <div class="seqmark" style="left:${CORRECCION.seq/FMAX*100}%"><span>secuencial ${fmt(CORRECCION.seq)} s</span></div></div></div>`).join('');
+  function fixBars(anim){ $$('.fbar',fix).forEach(b=>{ if(anim && !RM){ b.style.transition='none'; b.style.width='0'; void b.offsetWidth; b.style.transition=''; requestAnimationFrame(()=>b.style.width=b.dataset.w+'%'); } else b.style.width=b.dataset.w+'%'; }); }
+  fixBars(false);
   function growBars(){ if(RM) return; $$('#chart .bar').forEach((b,i)=>b.animate([{transform:'scaleY(0)'},{transform:'scaleY(1)'}],{duration:700,delay:i*120,easing:'cubic-bezier(.2,.9,.2,1.1)',fill:'backwards'})); }
   function tiles(){ if(RM) return; $$('.rtile').forEach((el,i)=>el.animate([{transform:'translateY(24px) rotate(-2deg)',opacity:0},{transform:'none',opacity:1}],{duration:600,delay:i*110,easing:'cubic-bezier(.2,.9,.2,1.15)',fill:'backwards'})); }
-  return { reset(){ tok.dead=true; rest(); }, run, enter(){ tiles(); growBars(); run(); } };
+  return { reset(){ tok.dead=true; rest(); }, run, enter(){ tiles(); growBars(); fixBars(true); run(); } };
 })(); MODS.push(cmp);
 
 /* ============ parámetros ============ */

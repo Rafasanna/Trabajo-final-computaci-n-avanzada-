@@ -1,0 +1,15 @@
+== Filtro y niveles (2000x2000) ==
+3/3 seq=0.409353 mpi=0.180582 omp=0.153102 hib=0.143871 mpi_ini=0.57027 hib_ini=0.416078
+3/9 seq=0.418638 mpi=0.18451 omp=0.155784 hib=0.150379 mpi_ini=0.586561 hib_ini=0.416371
+5/3 seq=0.654962 mpi=0.268956 omp=0.244656 hib=0.207589 mpi_ini=1.42008 hib_ini=0.98557
+5/9 seq=0.657299 mpi=0.280263 omp=0.253533 hib=0.208628 mpi_ini=1.46809 hib_ini=1.00501
+== Configuraciones hibridas (2000x2000, 3/3) ==
+seq=0.417084
+2x2 hib=0.19283 hib_ini=0.617554
+2x4 hib=0.152246 hib_ini=0.430628
+4x2 hib=0.154637 hib_ini=0.44067
+== OpenMP threads (2000x2000, 3/3) ==
+T=1 omp=0.551276
+T=2 omp=0.297135
+T=4 omp=0.160632
+T=8 omp=0.122884
