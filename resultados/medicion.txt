@@ -1,0 +1,31 @@
+
+Filtro 3x3 · 3 niveles · mediana de 3 ejecuciones
+
+== Imagen 800x800 ==
+  version                    unidades       tiempo   speedup  eficiencia
+  Secuencial                        1      0.065 s      1.00           -
+  OpenMP                            4      0.024 s      2.69         67%
+  MPI inicial                       4      0.090 s      0.72         18%
+  MPI corregido                     4      0.029 s      2.25         56%
+  Hibrido inicial                   8      0.069 s      0.94         12%
+  Hibrido corregido                 8      0.024 s      2.67         33%
+
+== Imagen 2000x2000 ==
+  version                    unidades       tiempo   speedup  eficiencia
+  Secuencial                        1      0.414 s      1.00           -
+  OpenMP                            4      0.150 s      2.75         69%
+  MPI inicial                       4      0.560 s      0.74         18%
+  MPI corregido                     4      0.182 s      2.27         57%
+  Hibrido inicial                   8      0.414 s      1.00         12%
+  Hibrido corregido                 8      0.146 s      2.84         35%
+
+== Imagen 5000x5000 ==
+  version                    unidades       tiempo   speedup  eficiencia
+  Secuencial                        1      2.587 s      1.00           -
+  OpenMP                            4      0.957 s      2.70         68%
+  MPI inicial                       4      4.092 s      0.63         16%
+  MPI corregido                     4      1.274 s      2.03         51%
+  Hibrido inicial                   8      2.771 s      0.93         12%
+  Hibrido corregido                 8      0.976 s      2.65         33%
+
+Resultados guardados en resultados/tiempos.csv

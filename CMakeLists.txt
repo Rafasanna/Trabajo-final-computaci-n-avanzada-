@@ -73,3 +73,10 @@ target_link_libraries(openmp PRIVATE sfml-graphics OpenMP::OpenMP_CXX)
 add_executable(hibrido src/hibrido.cpp)
 target_link_libraries(hibrido PRIVATE sfml-graphics MPI::MPI_CXX OpenMP::OpenMP_CXX)
 
+# Versión inicial de MPI e híbrido (antes de la corrección del filtrado).
+# Se conserva sin cambios para poder comparar tiempos antes y después.
+add_executable(mpi_inicial src/version_inicial/mpi.cpp)
+target_link_libraries(mpi_inicial PRIVATE sfml-graphics MPI::MPI_CXX)
+
+add_executable(hibrido_inicial src/version_inicial/hibrido.cpp)
+target_link_libraries(hibrido_inicial PRIVATE sfml-graphics MPI::MPI_CXX OpenMP::OpenMP_CXX)

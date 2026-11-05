@@ -9,19 +9,55 @@ Este proyecto genera una imagen estilo cartoon a partir de una imagen RGB y perm
 
 El procesamiento conserva el algoritmo definido para el trabajo: primero reduce ruido con un filtro promedio, después detecta bordes con Sobel y un umbral, posteriza los colores y finalmente combina los bordes con la imagen posterizada.
 
+## Versión inicial y corrección de MPI
+
+En la primera versión, MPI y el híbrido no guardaban la imagen filtrada: cada vez que Sobel necesitaba uno de sus 9 vecinos, `calcularBorde` llamaba a `pixelFiltrado` y volvía a calcular el promedio. El filtro se calculaba hasta **9 veces por píxel**, mientras que secuencial y OpenMP lo calculan una sola vez. Por eso MPI daba Speedup menor que 1.
+
+En la versión actual, cada proceso:
+
+1. calcula su rango de filas igual que antes (`filasBase`, `filasSobrantes`);
+2. **filtra una sola vez** sus filas más una fila vecina arriba y otra abajo (las que Sobel necesita en los límites del bloque) y las guarda en `imagenFiltradaLocal`;
+3. aplica Sobel leyendo esos valores guardados, posteriza y combina;
+4. reúne el resultado con `MPI_Gatherv`, igual que antes.
+
+En el híbrido, el paso 2 también se reparte entre threads con `#pragma omp parallel for schedule(static)`. El filtrado del bloque queda **dentro** del tiempo medido. Nada más cambia. Las líneas nuevas están marcadas con `// CORRECCIÓN:`.
+
+La versión inicial se conserva sin cambios en `src/version_inicial/` (ejecutables `mpi_inicial` e `hibrido_inicial`) para poder comparar. La versión entregada originalmente también quedó guardada en la etiqueta `v1-entrega-original` del repositorio.
+
+Las tres variantes paralelas (inicial, corregida y OpenMP) generan una imagen **idéntica** a la del secuencial.
+
+### Resultados
+
+Apple M5 (4 núcleos de rendimiento + 6 de eficiencia), filtro 3x3, 3 niveles, mediana de 3 ejecuciones. Salida completa en `resultados/medicion.txt` y `resultados/tiempos.csv`.
+
+| Versión | Unidades | 800x800 | 2000x2000 | 5000x5000 | Tiempo 5000x5000 |
+|---|---|---|---|---|---|
+| Secuencial | 1 | 1,00 | 1,00 | 1,00 | 2,59 s |
+| OpenMP | 4 threads | 2,69 (67 %) | 2,75 (69 %) | 2,70 (68 %) | 0,96 s |
+| MPI inicial | 4 procesos | 0,72 (18 %) | 0,74 (18 %) | 0,63 (16 %) | 4,09 s |
+| MPI corregido | 4 procesos | 2,25 (56 %) | 2,27 (57 %) | 2,03 (51 %) | 1,27 s |
+| Híbrido inicial | 2 × 4 = 8 | 0,94 (12 %) | 1,00 (12 %) | 0,93 (12 %) | 2,77 s |
+| Híbrido corregido | 2 × 4 = 8 | 2,67 (33 %) | 2,84 (35 %) | 2,65 (33 %) | 0,98 s |
+
+Speedup (eficiencia). La corrección hace que MPI y el híbrido pasen de no mejorar al secuencial a ser entre 2 y 2,8 veces más rápidos. OpenMP sigue siendo la opción más eficiente. El híbrido logra un tiempo similar al de OpenMP pero con el doble de unidades de ejecución; en este equipo, más allá de 4 unidades el trabajo también cae en los núcleos de eficiencia, que son más lentos.
+
 ## Estructura
 
 ```text
 computacion-avanzada-cartoon/
 ├── src/
 │   ├── secuencial.cpp
-│   ├── mpi.cpp
+│   ├── mpi.cpp              (versión corregida)
 │   ├── openmp.cpp
-│   └── hibrido.cpp
+│   ├── hibrido.cpp          (versión corregida)
+│   └── version_inicial/
+│       ├── mpi.cpp          (versión inicial, sin cambios)
+│       └── hibrido.cpp      (versión inicial, sin cambios)
 ├── imagenes/
 │   └── imagen.png
 ├── resultados/
 ├── CMakeLists.txt
+├── medir.sh
 ├── README.md
 └── .gitignore
 ```
@@ -35,7 +71,7 @@ computacion-avanzada-cartoon/
 - **OpenMP:** usa un proceso con varios threads que comparten memoria. Los `#pragma omp parallel for` reparten las filas entre threads.
 - **MPI + OpenMP:** usa varios procesos y varios threads dentro de cada proceso. MPI reparte grupos de filas entre procesos y OpenMP reparte las filas de cada grupo entre threads.
 
-Las versiones MPI e híbrida calculan el píxel filtrado cuando Sobel lo necesita, tal como estaba planteado en los códigos originales. Las versiones secuencial y OpenMP almacenan primero toda la imagen filtrada. No se cambió esta organización para mantener las implementaciones de referencia.
+Las versiones secuencial y OpenMP almacenan primero toda la imagen filtrada. Las versiones MPI e híbrida hacen todo en una sola pasada por sus filas, pero primero filtran y guardan su bloque (ver "Versión inicial y corrección de MPI").
 
 ## Requisitos
 
@@ -83,21 +119,26 @@ cmake ..
 cmake --build . -j
 ```
 
-Se generan cuatro ejecutables dentro de `build`:
+Se generan seis ejecutables dentro de `build`:
 
 ```text
 secuencial
 mpi
 openmp
 hibrido
+mpi_inicial
+hibrido_inicial
 ```
+
+`mpi_inicial` e `hibrido_inicial` son la versión anterior a la corrección y se usan solo para comparar. Se ejecutan con la misma sintaxis que `mpi` e `hibrido`.
 
 CMake enlaza únicamente las dependencias necesarias:
 
 - `secuencial`: SFML;
 - `mpi`: SFML y MPI;
 - `openmp`: SFML y OpenMP;
-- `hibrido`: SFML, MPI y OpenMP.
+- `hibrido` e `hibrido_inicial`: SFML, MPI y OpenMP;
+- `mpi_inicial`: SFML y MPI.
 
 Si se cambia una variable del código, alcanza con repetir:
 
@@ -267,7 +308,17 @@ Eficiencia = Speedup / cantidadUnidadesEjecucion
 
 Para MPI, las unidades de ejecución son los procesos. Para OpenMP, son los threads. Para la versión híbrida se puede usar `cantidadProcesos * cantidadThreads`, dejando este criterio aclarado en el informe.
 
-El proyecto no incluye resultados inventados ni tablas precargadas: los valores deben salir de ejecuciones reales en el equipo utilizado para las pruebas.
+Las tablas de este README salen de ejecuciones reales en el equipo utilizado para las pruebas.
+
+### Medir todo de una vez
+
+Desde `build`, después de compilar:
+
+```bash
+../medir.sh 3 3 3
+```
+
+Los argumentos son filtro, niveles y cantidad de repeticiones. El script ejecuta cada versión (secuencial, OpenMP con 4 threads, MPI con 4 procesos e híbrido con 2 procesos x 4 threads, en sus variantes inicial y corregida) para 800, 2000 y 5000, toma la mediana y calcula Speedup y Eficiencia. Guarda los resultados en `resultados/tiempos.csv`.
 
 ## Cambios técnicos respecto de los códigos originales
 
@@ -280,7 +331,8 @@ No se cambió el algoritmo, no se acortaron los nombres descriptivos y no se agr
 5. la versión MPI mide con `MPI_Wtime()` y usa barreras, siguiendo el criterio de la versión híbrida;
 6. MPI e híbrido convierten explícitamente `resultadoLocal.size()` a `int`, porque `MPI_Gatherv` recibe un contador de tipo `int`;
 7. se agregaron mensajes que informan procesos, threads y tiempos;
-8. CMake exige SFML 2.x para conservar la API original.
+8. CMake exige SFML 2.x para conservar la API original;
+9. corrección posterior: MPI e híbrido filtran y guardan su bloque una sola vez antes de aplicar Sobel, en lugar de recalcular el filtro para cada vecino. La versión anterior quedó en `src/version_inicial/`.
 
 ## Observación sobre imágenes muy grandes
 

@@ -1,0 +1,19 @@
+tamaño,version,unidades,tiempo_s,speedup,eficiencia
+800x800,Secuencial,1,0.0652562,1,1
+800x800,OpenMP,4,0.0242,2.695,0.674
+800x800,MPI inicial,4,0.0901,0.724,0.181
+800x800,MPI corregido,4,0.0290,2.251,0.563
+800x800,Hibrido inicial,8,0.0693,0.942,0.118
+800x800,Hibrido corregido,8,0.0245,2.666,0.333
+2000x2000,Secuencial,1,0.413901,1,1
+2000x2000,OpenMP,4,0.1503,2.755,0.689
+2000x2000,MPI inicial,4,0.5601,0.739,0.185
+2000x2000,MPI corregido,4,0.1822,2.272,0.568
+2000x2000,Hibrido inicial,8,0.4140,1.000,0.125
+2000x2000,Hibrido corregido,8,0.1460,2.836,0.354
+5000x5000,Secuencial,1,2.58652,1,1
+5000x5000,OpenMP,4,0.9575,2.701,0.675
+5000x5000,MPI inicial,4,4.0920,0.632,0.158
+5000x5000,MPI corregido,4,1.2745,2.029,0.507
+5000x5000,Hibrido inicial,8,2.7714,0.933,0.117
+5000x5000,Hibrido corregido,8,0.9759,2.650,0.331

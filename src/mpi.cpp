@@ -97,14 +97,17 @@ sf::Color pixelFiltrado(
     );
 }
 
-// Calcula si un píxel pertenece a un borde
+// Calcula si un píxel pertenece a un borde.
+// CORRECCIÓN: ya no recalcula el filtro para cada vecino.
+// Lee los valores filtrados que el proceso calculó y guardó una sola vez
+// en imagenFiltradaLocal (sus filas más una fila vecina arriba y abajo).
 int calcularBorde(
-    const vector<unsigned char>& imagen,
+    const vector<unsigned char>& imagenFiltradaLocal,
+    int filaInicialFiltrado,
     int columna,
     int fila,
     int anchoImagen,
     int altoImagen,
-    int tamanioFiltro,
     int umbral
 ) {
     if (fila == 0 ||
@@ -143,20 +146,18 @@ int calcularBorde(
             int filaVecina =
                 fila + desplazamientoFila;
 
-            sf::Color filtrado =
-                pixelFiltrado(
-                    imagen,
+            // La fila vecina se ubica dentro del bloque filtrado local
+            int posicionFiltrada =
+                posicionPixel(
                     columnaVecina,
-                    filaVecina,
-                    anchoImagen,
-                    altoImagen,
-                    tamanioFiltro
+                    filaVecina - filaInicialFiltrado,
+                    anchoImagen
                 );
 
             int valorGris = (int)(
-                0.30 * filtrado.r +
-                0.59 * filtrado.g +
-                0.11 * filtrado.b
+                0.30 * imagenFiltradaLocal[posicionFiltrada] +
+                0.59 * imagenFiltradaLocal[posicionFiltrada + 1] +
+                0.11 * imagenFiltradaLocal[posicionFiltrada + 2]
             );
 
             gradienteX +=
@@ -337,11 +338,67 @@ int main(int argc, char** argv) {
         4
     );
 
+    // CORRECCIÓN: bloque filtrado local.
+    // Sobel necesita una fila vecina arriba y otra abajo, así que el
+    // proceso filtra sus filas más esas filas de borde (si existen).
+    int filaInicialFiltrado =
+        filaInicial > 0
+            ? filaInicial - 1
+            : 0;
+
+    int filaFinalFiltrado =
+        filaFinal < altoImagen
+            ? filaFinal + 1
+            : altoImagen;
+
+    int cantidadFilasFiltrado =
+        filaFinalFiltrado - filaInicialFiltrado;
+
+    vector<unsigned char> imagenFiltradaLocal(
+        cantidadFilasFiltrado *
+        anchoImagen *
+        4
+    );
+
     MPI_Barrier(MPI_COMM_WORLD);
 
     double tiempoInicio =
         MPI_Wtime();
 
+    // CORRECCIÓN: 1) filtrar una sola vez el bloque y guardarlo
+    for (int fila = filaInicialFiltrado;
+         fila < filaFinalFiltrado;
+         fila++) {
+
+        for (int columna = 0;
+             columna < anchoImagen;
+             columna++) {
+
+            sf::Color filtrado =
+                pixelFiltrado(
+                    imagenOriginal,
+                    columna,
+                    fila,
+                    anchoImagen,
+                    altoImagen,
+                    tamanioFiltro
+                );
+
+            int posicionFiltrada =
+                posicionPixel(
+                    columna,
+                    fila - filaInicialFiltrado,
+                    anchoImagen
+                );
+
+            imagenFiltradaLocal[posicionFiltrada] = filtrado.r;
+            imagenFiltradaLocal[posicionFiltrada + 1] = filtrado.g;
+            imagenFiltradaLocal[posicionFiltrada + 2] = filtrado.b;
+            imagenFiltradaLocal[posicionFiltrada + 3] = 255;
+        }
+    }
+
+    // 2) Sobel, posterizado y combinación sobre las filas propias
     // Cada proceso trabaja solamente sus filas
     for (int fila = filaInicial;
          fila < filaFinal;
@@ -378,12 +435,12 @@ int main(int argc, char** argv) {
 
             int valorBorde =
                 calcularBorde(
-                    imagenOriginal,
+                    imagenFiltradaLocal,
+                    filaInicialFiltrado,
                     columna,
                     fila,
                     anchoImagen,
                     altoImagen,
-                    tamanioFiltro,
                     umbral
                 );
 
