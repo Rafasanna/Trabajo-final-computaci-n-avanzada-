@@ -294,6 +294,19 @@ table.rows td:first-child{font-weight:700}
 .closing p{font-size:clamp(28px,4.4vw,60px);font-weight:800;font-stretch:75%;line-height:.98;text-transform:uppercase;text-wrap:balance}
 .closing p em{font-style:normal;color:var(--c-mpi);-webkit-text-stroke:0}
 .closing small{display:block;margin-top:14px;font-family:var(--mono);font-size:13px;opacity:.75}
+.bye{align-items:center;text-align:center}
+.bye-in{display:flex;flex-direction:column;align-items:center;gap:22px}
+.bye .kicker{justify-content:center}
+.bye-t{font-size:clamp(40px,8.4vw,128px);font-weight:800;font-stretch:75%;line-height:.88;letter-spacing:-.01em}
+.bye-t .w1{color:var(--fg);text-shadow:4px 4px 0 var(--c-mpi),8px 8px 0 var(--c-hib)}
+.bye-t .w2{color:transparent;-webkit-text-stroke:2px var(--fg);text-shadow:5px 5px 0 var(--c-omp)}
+@supports not (-webkit-text-stroke:2px black){.bye-t .w2{color:var(--fg)}}
+.bye .word{animation:none}
+.bye.seen .word{animation:rise .8s cubic-bezier(.2,.9,.2,1.15) both;animation-delay:calc(var(--i) * 140ms + 100ms)}
+.bye-q{font-size:clamp(22px,2.6vw,34px);font-weight:800;font-stretch:80%;background:var(--c-seq);color:var(--on);border:2px solid var(--line);padding:6px 18px;box-shadow:5px 5px 0 var(--line);transform:rotate(-2deg)}
+.bye .authors{justify-content:center;text-align:center}
+.bye-chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.bye-chips span{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--k);color:var(--on);border:2px solid var(--line);padding:4px 10px}
 footer{max-width:1320px;margin:0 auto;padding-block:30px 60px;font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 
 .reveal{transition:transform .7s cubic-bezier(.2,.9,.2,1)}
@@ -634,6 +647,17 @@ valorBorde = <span class="fn">calcularBorde</span>(imagenFiltradaLocal, filaInic
   <div class="closing">
     <p>Paralelizar no es solo agregar threads o procesos: hay que <em>medir</em>, encontrar dónde se va el tiempo y corregirlo.</p>
     <small>En nuestro caso, el bajo rendimiento de MPI no era la comunicación: era trabajo repetido. Corregido eso, OpenMP sigue siendo la opción más eficiente.</small>
+  </div>
+</section>
+
+<!-- ================= CIERRE ================= -->
+<section class="slide bye" id="gracias" data-i="7">
+  <div class="bye-in">
+    <p class="kicker">Fin de la exposición</p>
+    <h2 class="bye-t"><span class="word w1" style="--i:0">¡MUCHAS GRACIAS</span><br><span class="word w2" style="--i:1">POR SU ATENCIÓN!</span></h2>
+    <p class="bye-q">¿Preguntas?</p>
+    <p class="authors"><span>Integrantes</span><b>Sanna Rafaela</b><i>·</i><b>Gonzalez Calderon Joaquin</b></p>
+    <div class="bye-chips"><span style="--k:var(--c-seq)">Secuencial</span><span style="--k:var(--c-omp)">OpenMP</span><span style="--k:var(--c-mpi)">MPI</span><span style="--k:var(--c-hib)">Híbrido</span></div>
   </div>
 </section>
 </main>
